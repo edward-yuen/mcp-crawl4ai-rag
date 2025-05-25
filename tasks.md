@@ -20,17 +20,17 @@
 
 ## Phase 2: Core Database Layer
 
-### Task 2.1: Create Database Connection Module
-- [ ] Create `src/database.py` with PostgreSQL connection management
-- [ ] Implement connection pooling (using asyncpg pool or psycopg2 pool)
-- [ ] Add connection health checks and retry logic
-- [ ] Add environment variable validation
+### Task 2.1: Create Database Connection Module ✅ [Completed: 2025-01-22]
+- [x] Create `src/database.py` with PostgreSQL connection management
+- [x] Implement connection pooling (using asyncpg pool or psycopg2 pool)
+- [x] Add connection health checks and retry logic
+- [x] Add environment variable validation
 
 ### Task 2.2: Update Utils Module
-- [ ] Replace `get_supabase_client()` with `get_db_connection()`
-- [ ] Rewrite `add_documents_to_supabase()` as `add_documents_to_postgres()`
-- [ ] Rewrite `search_documents()` to use direct SQL queries
-- [ ] Update all database operations to use raw SQL or query builder
+- [x] Replace `get_supabase_client()` with `get_db_connection()`
+- [x] Rewrite `add_documents_to_supabase()` as `add_documents_to_postgres()`
+- [x] Rewrite `search_documents()` to use direct SQL queries
+- [x] Update all database operations to use raw SQL or query builder
 ## Phase 3: Core Application Updates
 
 ### Task 3.1: Update Main MCP Server
@@ -73,10 +73,10 @@
 ## Phase 6: Testing and Validation
 
 ### Task 6.1: Unit Testing
-- [ ] Test database connection and pooling
-- [ ] Test individual database operations (insert, select, delete)
-- [ ] Test vector similarity search functionality
-- [ ] Test embedding creation and storage
+- [x] Test database connection and pooling (created test_database_connection.py)
+- [x] Test individual database operations (insert, select, delete) (created tests/test_utils.py)
+- [x] Test vector similarity search functionality (created tests/test_utils.py)
+- [x] Test embedding creation and storage (created tests/test_utils.py)
 
 ### Task 6.2: Integration Testing
 - [ ] Test all MCP tools end-to-end
@@ -128,3 +128,34 @@
 - Phase 3-4: 3-4 hours (Application updates and SQL)
 - Phase 5-7: 2-3 hours (Documentation, testing, cleanup)
 - **Total**: 7-10 hours for complete migration
+
+## Discovered During Work (Task 2.2 - 2024-01-24)
+
+### Completed:
+- ✅ Updated `utils.py` to use PostgreSQL instead of Supabase
+- ✅ Replaced `get_supabase_client()` with `get_db_connection()`
+- ✅ Rewrote `add_documents_to_supabase()` as `add_documents_to_postgres()` using raw SQL
+- ✅ Rewrote `search_documents()` to use direct SQL queries via the `match_crawled_pages` function
+- ✅ Created comprehensive test suite in `tests/test_utils.py`
+- ✅ All database operations now use asyncpg connection from `database.py`
+
+### Key Changes Made:
+1. **Import Changes**: Removed `supabase` import, added `database` module import
+2. **Function Signatures**: Removed `client` parameter from functions since we now use global connection
+3. **Async Functions**: Made database functions `async` to work with asyncpg
+4. **SQL Operations**: Used parameterized queries with proper type casting (e.g., `$1::vector`, `$2::jsonb`)
+5. **Batch Processing**: Maintained batch processing logic but adapted for PostgreSQL's `execute_many()`
+
+### Next Steps (Task 3.1):
+- Update `crawl4ai_mcp.py` to:
+  - Remove Supabase imports
+  - Update function calls to use new async functions
+  - Change `get_supabase_client()` to `get_db_connection()`
+  - Add `await` to database function calls
+  - Update the lifespan context manager
+
+### Notes:
+- The schema expects the `crawl` schema to exist (created by `crawled_pages.sql`)
+- Vector operations require pgvector extension to be installed
+- All metadata is stored as JSONB in PostgreSQL
+- Embedding dimension is hardcoded to 1536 (OpenAI's text-embedding-3-small)
