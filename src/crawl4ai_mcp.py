@@ -12,7 +12,6 @@ from typing import List, Dict, Any, Optional
 from urllib.parse import urlparse, urldefrag
 from xml.etree import ElementTree
 from dotenv import load_dotenv
-from supabase import Client
 from pathlib import Path
 import requests
 import asyncio
@@ -21,8 +20,31 @@ import os
 import re
 
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode, MemoryAdaptiveDispatcher
-from utils import get_supabase_client, add_documents_to_supabase, search_documents
+from .database import DatabaseConnection, initialize_db_connection, close_db_connection
+from .utils import add_documents_to_postgres, search_documents
+from .lightrag_integration import (
+    search_lightrag_documents, 
+    get_lightrag_collections,
+    get_lightrag_schema_info,
+    search_multi_schema
+)
+from .lightrag_knowledge_graph import (
+    query_knowledge_graph,
+    get_entities_by_type,
+    get_entity_relationships,
+    search_entities_by_embedding,
+    get_communities,
+    find_path_between_entities,
+    get_graph_statistics
+)
 
+from .enhanced_kg_integration import (
+    enhanced_query_graph,
+    build_knowledge_graph_from_crawled_data,
+    analyze_knowledge_graph,
+    get_entity_suggestions,
+    KnowledgeGraphManager
+)
 # Load environment variables from the project root .env file
 project_root = Path(__file__).resolve().parent.parent
 dotenv_path = project_root / '.env'
@@ -35,7 +57,7 @@ load_dotenv(dotenv_path, override=True)
 class Crawl4AIContext:
     """Context for the Crawl4AI MCP server."""
     crawler: AsyncWebCrawler
-    supabase_client: Client
+    db_connection: DatabaseConnection
     
 @asynccontextmanager
 async def crawl4ai_lifespan(server: FastMCP) -> AsyncIterator[Crawl4AIContext]:
@@ -46,7 +68,7 @@ async def crawl4ai_lifespan(server: FastMCP) -> AsyncIterator[Crawl4AIContext]:
         server: The FastMCP server instance
         
     Yields:
-        Crawl4AIContext: The context containing the Crawl4AI crawler and Supabase client
+        Crawl4AIContext: The context containing the Crawl4AI crawler and database connection
     """
     # Create browser configuration
     browser_config = BrowserConfig(
@@ -58,25 +80,47 @@ async def crawl4ai_lifespan(server: FastMCP) -> AsyncIterator[Crawl4AIContext]:
     crawler = AsyncWebCrawler(config=browser_config)
     await crawler.__aenter__()
     
-    # Initialize Supabase client
-    supabase_client = get_supabase_client()
+    # Initialize PostgreSQL connection
+    db_connection = await initialize_db_connection()
+    
+    # Create schema if it doesn't exist
+    await db_connection.create_schema_if_not_exists()
     
     try:
         yield Crawl4AIContext(
             crawler=crawler,
-            supabase_client=supabase_client
+            db_connection=db_connection
         )
     finally:
         # Clean up the crawler
         await crawler.__aexit__(None, None, None)
+        # Close database connection
+        await close_db_connection()
 
 # Initialize FastMCP server
+def get_port() -> int:
+    """Get port from environment, handling empty string values."""
+    port_str = os.getenv("PORT", "8051")
+    if not port_str or port_str.strip() == "":
+        return 8051
+    try:
+        return int(port_str)
+    except ValueError:
+        return 8051
+
+def get_host() -> str:
+    """Get host from environment, handling empty string values."""
+    host_str = os.getenv("HOST", "0.0.0.0")
+    if not host_str or host_str.strip() == "":
+        return "0.0.0.0"
+    return host_str
+
 mcp = FastMCP(
     "mcp-crawl4ai-rag",
     description="MCP server for RAG and web crawling with Crawl4AI",
     lifespan=crawl4ai_lifespan,
-    host=os.getenv("HOST", "0.0.0.0"),
-    port=os.getenv("PORT", "8051")
+    host=get_host(),
+    port=get_port()
 )
 
 def is_sitemap(url: str) -> bool:
@@ -192,22 +236,22 @@ def extract_section_info(chunk: str) -> Dict[str, Any]:
 @mcp.tool()
 async def crawl_single_page(ctx: Context, url: str) -> str:
     """
-    Crawl a single web page and store its content in Supabase.
+    Crawl a single web page and store its content in PostgreSQL.
     
     This tool is ideal for quickly retrieving content from a specific URL without following links.
-    The content is stored in Supabase for later retrieval and querying.
+    The content is stored in PostgreSQL for later retrieval and querying.
     
     Args:
         ctx: The MCP server provided context
         url: URL of the web page to crawl
     
     Returns:
-        Summary of the crawling operation and storage in Supabase
+        Summary of the crawling operation and storage in PostgreSQL
     """
     try:
-        # Get the crawler from the context
+        # Get the crawler and database connection from the context
         crawler = ctx.request_context.lifespan_context.crawler
-        supabase_client = ctx.request_context.lifespan_context.supabase_client
+        db_connection = ctx.request_context.lifespan_context.db_connection
         
         # Configure the crawl
         run_config = CrawlerRunConfig(cache_mode=CacheMode.BYPASS, stream=False)
@@ -219,7 +263,7 @@ async def crawl_single_page(ctx: Context, url: str) -> str:
             # Chunk the content
             chunks = smart_chunk_markdown(result.markdown)
             
-            # Prepare data for Supabase
+            # Prepare data for PostgreSQL
             urls = []
             chunk_numbers = []
             contents = []
@@ -241,8 +285,8 @@ async def crawl_single_page(ctx: Context, url: str) -> str:
             # Create url_to_full_document mapping
             url_to_full_document = {url: result.markdown}
             
-            # Add to Supabase
-            add_documents_to_supabase(supabase_client, urls, chunk_numbers, contents, metadatas, url_to_full_document)
+            # Add to PostgreSQL using the PostgreSQL functions
+            await add_documents_to_postgres(urls, chunk_numbers, contents, metadatas, url_to_full_document)
             
             return json.dumps({
                 "success": True,
@@ -270,14 +314,14 @@ async def crawl_single_page(ctx: Context, url: str) -> str:
 @mcp.tool()
 async def smart_crawl_url(ctx: Context, url: str, max_depth: int = 3, max_concurrent: int = 10, chunk_size: int = 5000) -> str:
     """
-    Intelligently crawl a URL based on its type and store content in Supabase.
+    Intelligently crawl a URL based on its type and store content in PostgreSQL.
     
     This tool automatically detects the URL type and applies the appropriate crawling method:
     - For sitemaps: Extracts and crawls all URLs in parallel
     - For text files (llms.txt): Directly retrieves the content
     - For regular webpages: Recursively crawls internal links up to the specified depth
     
-    All crawled content is chunked and stored in Supabase for later retrieval and querying.
+    All crawled content is chunked and stored in PostgreSQL for later retrieval and querying.
     
     Args:
         ctx: The MCP server provided context
@@ -290,9 +334,9 @@ async def smart_crawl_url(ctx: Context, url: str, max_depth: int = 3, max_concur
         JSON string with crawl summary and storage information
     """
     try:
-        # Get the crawler and Supabase client from the context
+        # Get the crawler and database connection from the context
         crawler = ctx.request_context.lifespan_context.crawler
-        supabase_client = ctx.request_context.lifespan_context.supabase_client
+        db_connection = ctx.request_context.lifespan_context.db_connection
         
         crawl_results = []
         crawl_type = "webpage"
@@ -325,7 +369,7 @@ async def smart_crawl_url(ctx: Context, url: str, max_depth: int = 3, max_concur
                 "error": "No content found"
             }, indent=2)
         
-        # Process results and store in Supabase
+        # Process results and store in PostgreSQL
         urls = []
         chunk_numbers = []
         contents = []
@@ -358,10 +402,10 @@ async def smart_crawl_url(ctx: Context, url: str, max_depth: int = 3, max_concur
         for doc in crawl_results:
             url_to_full_document[doc['url']] = doc['markdown']
         
-        # Add to Supabase
+        # Add to PostgreSQL using the PostgreSQL functions
         # IMPORTANT: Adjust this batch size for more speed if you want! Just don't overwhelm your system or the embedding API ;)
         batch_size = 20
-        add_documents_to_supabase(supabase_client, urls, chunk_numbers, contents, metadatas, url_to_full_document, batch_size=batch_size)
+        await add_documents_to_postgres(urls, chunk_numbers, contents, metadatas, url_to_full_document, batch_size=batch_size)
         
         return json.dumps({
             "success": True,
@@ -486,29 +530,22 @@ async def get_available_sources(ctx: Context) -> str:
         JSON string with the list of available sources
     """
     try:
-        # Get the Supabase client from the context
-        supabase_client = ctx.request_context.lifespan_context.supabase_client
+        # Get the database connection from the context
+        db_connection = ctx.request_context.lifespan_context.db_connection
         
-        # Use a direct query with the Supabase client
-        # This could be more efficient with a direct Postgres query but
-        # I don't want to require users to set a DB_URL environment variable as well
-        result = supabase_client.from_('crawled_pages')\
-            .select('metadata')\
-            .not_.is_('metadata->>source', 'null')\
-            .execute()
-            
-        # Use a set to efficiently track unique sources
-        unique_sources = set()
+        # Query to get unique sources from metadata
+        # Reason: Using DISTINCT with JSONB extraction to get unique sources efficiently
+        result = await db_connection.fetch(
+            """
+            SELECT DISTINCT metadata->>'source' as source
+            FROM crawl.crawled_pages
+            WHERE metadata->>'source' IS NOT NULL
+            ORDER BY source
+            """
+        )
         
-        # Extract the source values from the result using a set for uniqueness
-        if result.data:
-            for item in result.data:
-                source = item.get('metadata', {}).get('source')
-                if source:
-                    unique_sources.add(source)
-        
-        # Convert set to sorted list for consistent output
-        sources = sorted(list(unique_sources))
+        # Extract sources from the result
+        sources = [row['source'] for row in result if row['source']]
         
         return json.dumps({
             "success": True,
@@ -541,17 +578,13 @@ async def perform_rag_query(ctx: Context, query: str, source: str = None, match_
         JSON string with the search results
     """
     try:
-        # Get the Supabase client from the context
-        supabase_client = ctx.request_context.lifespan_context.supabase_client
-        
         # Prepare filter if source is provided and not empty
         filter_metadata = None
         if source and source.strip():
             filter_metadata = {"source": source}
         
         # Perform the search
-        results = search_documents(
-            client=supabase_client,
+        results = await search_documents(
             query=query,
             match_count=match_count,
             filter_metadata=filter_metadata
@@ -581,6 +614,356 @@ async def perform_rag_query(ctx: Context, query: str, source: str = None, match_
             "error": str(e)
         }, indent=2)
 
+@mcp.tool()
+async def query_lightrag_schema(ctx: Context, query: str, collection: str = None, match_count: int = 5) -> str:
+    """
+    Query documents from the LightRAG schema.
+    
+    This tool searches for documents stored in the lightrag schema, which may contain
+    data from other RAG applications or pre-existing document collections.
+    
+    Args:
+        ctx: The MCP server provided context
+        query: The search query
+        collection: Optional collection name to filter results
+        match_count: Maximum number of results to return (default: 5)
+    
+    Returns:
+        JSON string with the search results from lightrag schema
+    """
+    try:
+        # Search lightrag documents
+        results = await search_lightrag_documents(
+            query=query,
+            match_count=match_count,
+            collection_name=collection
+        )
+        
+        # Format the results
+        formatted_results = []
+        for result in results:
+            formatted_results.append({
+                "id": result.get("id"),
+                "content": result.get("content"),
+                "metadata": result.get("metadata"),
+                "similarity": result.get("similarity")
+            })
+        
+        return json.dumps({
+            "success": True,
+            "query": query,
+            "schema": "lightrag",
+            "collection_filter": collection,
+            "results": formatted_results,
+            "count": len(formatted_results)
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({
+            "success": False,
+            "query": query,
+            "error": str(e)
+        }, indent=2)
+
+@mcp.tool()
+async def get_lightrag_info(ctx: Context) -> str:
+    """
+    Get information about the LightRAG schema structure and available collections.
+    
+    This tool provides metadata about what data is available in the lightrag schema,
+    including table structures and available collections.
+    
+    Args:
+        ctx: The MCP server provided context
+    
+    Returns:
+        JSON string with schema information and available collections
+    """
+    try:
+        # Get schema information
+        schema_info = await get_lightrag_schema_info()
+        
+        # Get available collections
+        collections = await get_lightrag_collections()
+        
+        return json.dumps({
+            "success": True,
+            "schema_info": schema_info,
+            "collections": collections
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({
+            "success": False,
+            "error": str(e)
+        }, indent=2)
+
+@mcp.tool()
+async def multi_schema_search(ctx: Context, query: str, schemas: List[str] = None, match_count: int = 5, combine: bool = True) -> str:
+    """
+    Search across multiple schemas (crawl and lightrag) simultaneously.
+    
+    This tool allows searching both the crawl schema (web-crawled data) and the lightrag
+    schema (existing RAG data) in one query, optionally combining and re-ranking results.
+    
+    Args:
+        ctx: The MCP server provided context
+        query: The search query
+        schemas: List of schemas to search (default: ["crawl", "lightrag"])
+        match_count: Maximum number of results per schema (default: 5)
+        combine: Whether to combine and re-rank results by similarity (default: True)
+    
+    Returns:
+        JSON string with search results from multiple schemas
+    """
+    try:
+        # Use default schemas if none provided
+        if schemas is None:
+            schemas = ["crawl", "lightrag"]
+        
+        # Perform multi-schema search
+        results = await search_multi_schema(
+            query=query,
+            schemas=schemas,
+            match_count=match_count,
+            combine_results=combine
+        )
+        
+        return json.dumps({
+            "success": True,
+            "query": query,
+            "schemas_searched": schemas,
+            "results": results
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({
+            "success": False,
+            "query": query,
+            "error": str(e)
+        }, indent=2)
+
+@mcp.tool()
+async def query_graph(ctx: Context, cypher_query: str) -> str:
+    """
+    Execute a Cypher query on the LightRAG knowledge graph.
+    
+    This tool allows direct querying of the knowledge graph using Cypher query language,
+    enabling complex graph traversals and pattern matching.
+    
+    Args:
+        ctx: The MCP server provided context
+        cypher_query: Cypher query to execute (e.g., "MATCH (n:Person) RETURN n LIMIT 10")
+    
+    Returns:
+        JSON string with query results
+    """
+    try:
+        results = await query_knowledge_graph(cypher_query)
+        
+        return json.dumps({
+            "success": True,
+            "query": cypher_query,
+            "results": results,
+            "count": len(results)
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({
+            "success": False,
+            "query": cypher_query,
+            "error": str(e)
+        }, indent=2)
+
+@mcp.tool()
+async def get_graph_entities(ctx: Context, entity_type: str = None, limit: int = 50) -> str:
+    """
+    Get entities from the LightRAG knowledge graph.
+    
+    This tool retrieves entities (nodes) from the knowledge graph, optionally filtered
+    by type (e.g., Person, Organization, Concept).
+    
+    Args:
+        ctx: The MCP server provided context
+        entity_type: Optional entity type to filter by (e.g., "Person", "Organization")
+        limit: Maximum number of entities to return (default: 50)
+    
+    Returns:
+        JSON string with entity list
+    """
+    try:
+        entities = await get_entities_by_type(entity_type, limit)
+        
+        return json.dumps({
+            "success": True,
+            "entity_type": entity_type,
+            "entities": entities,
+            "count": len(entities)
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({
+            "success": False,
+            "error": str(e)
+        }, indent=2)
+
+@mcp.tool()
+async def get_entity_graph(ctx: Context, entity_name: str, relationship_type: str = None, depth: int = 1) -> str:
+    """
+    Get the relationship graph for a specific entity.
+    
+    This tool retrieves all relationships and connected entities for a given entity,
+    up to a specified depth in the graph.
+    
+    Args:
+        ctx: The MCP server provided context
+        entity_name: Name of the entity to explore
+        relationship_type: Optional relationship type to filter (e.g., "KNOWS", "WORKS_AT")
+        depth: How many hops to traverse from the entity (default: 1)
+    
+    Returns:
+        JSON string with entity relationships and connected nodes
+    """
+    try:
+        graph_data = await get_entity_relationships(entity_name, relationship_type, depth)
+        
+        return json.dumps({
+            "success": True,
+            "entity": entity_name,
+            "depth": depth,
+            "relationship_filter": relationship_type,
+            "graph": graph_data
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({
+            "success": False,
+            "entity": entity_name,
+            "error": str(e)
+        }, indent=2)
+
+@mcp.tool()
+async def search_graph_entities(ctx: Context, query: str, entity_type: str = None, limit: int = 10) -> str:
+    """
+    Search for entities in the knowledge graph using semantic similarity.
+    
+    This tool finds entities whose embeddings are most similar to the query,
+    useful for finding relevant entities based on meaning rather than exact matches.
+    
+    Args:
+        ctx: The MCP server provided context
+        query: Search query
+        entity_type: Optional entity type to filter results
+        limit: Maximum number of results (default: 10)
+    
+    Returns:
+        JSON string with matching entities ordered by similarity
+    """
+    try:
+        entities = await search_entities_by_embedding(query, entity_type, limit)
+        
+        return json.dumps({
+            "success": True,
+            "query": query,
+            "entity_type_filter": entity_type,
+            "entities": entities,
+            "count": len(entities)
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({
+            "success": False,
+            "query": query,
+            "error": str(e)
+        }, indent=2)
+
+@mcp.tool()
+async def find_entity_path(ctx: Context, start_entity: str, end_entity: str, max_depth: int = 3) -> str:
+    """
+    Find paths between two entities in the knowledge graph.
+    
+    This tool discovers how two entities are connected through the graph,
+    showing the shortest paths and relationships between them.
+    
+    Args:
+        ctx: The MCP server provided context
+        start_entity: Name of the starting entity
+        end_entity: Name of the ending entity
+        max_depth: Maximum path length to search (default: 3)
+    
+    Returns:
+        JSON string with paths between the entities
+    """
+    try:
+        paths = await find_path_between_entities(start_entity, end_entity, max_depth)
+        
+        return json.dumps({
+            "success": True,
+            "start_entity": start_entity,
+            "end_entity": end_entity,
+            "max_depth": max_depth,
+            "paths": paths,
+            "paths_found": len(paths)
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({
+            "success": False,
+            "start_entity": start_entity,
+            "end_entity": end_entity,
+            "error": str(e)
+        }, indent=2)
+
+@mcp.tool()
+async def get_graph_communities(ctx: Context, level: int = None, limit: int = 20) -> str:
+    """
+    Get communities from the LightRAG knowledge graph.
+    
+    Communities are groups of highly connected entities. This tool retrieves
+    community structures that LightRAG has identified in the knowledge graph.
+    
+    Args:
+        ctx: The MCP server provided context
+        level: Optional community level to filter by
+        limit: Maximum number of communities to return (default: 20)
+    
+    Returns:
+        JSON string with community information
+    """
+    try:
+        communities = await get_communities(level, limit)
+        
+        return json.dumps({
+            "success": True,
+            "level_filter": level,
+            "communities": communities,
+            "count": len(communities)
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({
+            "success": False,
+            "error": str(e)
+        }, indent=2)
+
+@mcp.tool()
+async def get_graph_stats(ctx: Context) -> str:
+    """
+    Get statistics about the LightRAG knowledge graph.
+    
+    This tool provides an overview of the graph structure, including counts
+    of different entity types and relationship types.
+    
+    Args:
+        ctx: The MCP server provided context
+    
+    Returns:
+        JSON string with graph statistics
+    """
+    try:
+        stats = await get_graph_statistics()
+        
+        return json.dumps({
+            "success": True,
+            "statistics": stats
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({
+            "success": False,
+            "error": str(e)
+        }, indent=2)
+
 async def main():
     transport = os.getenv("TRANSPORT", "sse")
     if transport == 'sse':
@@ -592,3 +975,288 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
+@mcp.tool()
+async def build_knowledge_graph(ctx: Context, limit: int = 100) -> str:
+    """
+    Build knowledge graph from recently crawled documents.
+    
+    This tool automatically extracts entities and relationships from crawled content
+    and populates the knowledge graph. It uses NLP patterns to identify:
+    - Person entities (names)
+    - Organization entities (companies, institutions)
+    - Relationships between entities (works at, related to, etc.)
+    
+    Args:
+        limit: Maximum number of recent documents to process (default: 100)
+        
+    Returns:
+        JSON with build results including entities and relationships created
+    """
+    try:
+        result = await build_knowledge_graph_from_crawled_data(limit)
+        
+        return json.dumps({
+            "success": result.get("success", False),
+            "documents_processed": result.get("documents_processed", 0),
+            "entities_created": result.get("entities_created", 0),
+            "relationships_created": result.get("relationships_created", 0),
+            "error": result.get("error")
+        }, indent=2)
+        
+    except Exception as e:
+        return json.dumps({
+            "success": False,
+            "error": str(e)
+        }, indent=2)
+
+
+@mcp.tool()
+async def analyze_graph_patterns(ctx: Context) -> str:
+    """
+    Analyze patterns and structures in the knowledge graph.
+    
+    This tool performs advanced graph analytics to discover:
+    - Central entities (highly connected nodes)
+    - Isolated entities (disconnected nodes)
+    - Triangular patterns (potential communities)
+    - Cross-type connections (e.g., Person to Organization paths)
+    
+    Useful for understanding the structure and finding insights in your knowledge graph.
+    
+    Returns:
+        JSON with various graph analysis results
+    """
+    try:
+        analysis = await analyze_knowledge_graph()
+        
+        if "error" in analysis:
+            return json.dumps({
+                "success": False,
+                "error": analysis["error"]
+            }, indent=2)
+        
+        return json.dumps({
+            "success": True,
+            "analysis": analysis,
+            "insights": {
+                "central_entities_count": len(analysis.get("central_entities", [])),
+                "isolated_entities_count": len(analysis.get("isolated_entities", [])),
+                "triangular_patterns_count": len(analysis.get("triangular_patterns", [])),
+                "cross_type_connections_count": len(analysis.get("cross_type_connections", []))
+            }
+        }, indent=2)
+        
+    except Exception as e:
+        return json.dumps({
+            "success": False,
+            "error": str(e)
+        }, indent=2)
+
+
+@mcp.tool()
+async def suggest_entity_relationships(ctx: Context, entity_name: str) -> str:
+    """
+    Suggest potential new relationships for an entity.
+    
+    This tool analyzes the graph structure to suggest entities that might be
+    related to the given entity based on shared connections and patterns.
+    Useful for discovering missing relationships or expanding entity connections.
+    
+    Args:
+        entity_name: Name of the entity to analyze
+        
+    Returns:
+        JSON with suggested relationships and connection strengths
+    """
+    try:
+        result = await get_entity_suggestions(entity_name)
+        
+        return json.dumps({
+            "success": result["success"],
+            "entity": result["entity"],
+            "suggestions": result["suggested_relationships"],
+            "count": result["count"],
+            "explanation": "Suggestions based on shared connections in the graph"
+        }, indent=2)
+        
+    except Exception as e:
+        return json.dumps({
+            "success": False,
+            "entity": entity_name,
+            "error": str(e)
+        }, indent=2)
+
+
+@mcp.tool()
+async def enhanced_graph_query(ctx: Context, cypher_query: str, parameters: str = "{}") -> str:
+    """
+    Execute an enhanced Cypher query with better error handling and diagnostics.
+    
+    This is an improved version of the basic query_graph tool that provides:
+    - Better error messages and diagnostics
+    - Parameter support
+    - AGE availability checking
+    - Result formatting and metadata
+    
+    Args:
+        cypher_query: Cypher query to execute
+        parameters: JSON string of parameters (optional)
+        
+    Returns:
+        JSON with query results and metadata
+    """
+    try:
+        # Parse parameters if provided
+        params = {}
+        if parameters and parameters != "{}":
+            params = json.loads(parameters)
+        
+        result = await enhanced_query_graph(cypher_query, params)
+        
+        return json.dumps(result, indent=2)
+        
+    except json.JSONDecodeError as e:
+        return json.dumps({
+            "success": False,
+            "query": cypher_query,
+            "error": f"Invalid parameters JSON: {str(e)}"
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({
+            "success": False,
+            "query": cypher_query,
+            "error": str(e)
+        }, indent=2)
+
+
+@mcp.tool()
+async def check_graph_health(ctx: Context) -> str:
+    """
+    Check the health and status of the knowledge graph.
+    
+    This tool verifies:
+    - Apache AGE availability and configuration
+    - Graph existence and accessibility
+    - Basic connectivity and data integrity
+    - Performance metrics
+    
+    Returns:
+        JSON with comprehensive health status
+    """
+    try:
+        kg_manager = KnowledgeGraphManager()
+        
+        # Check AGE availability
+        age_available = await kg_manager.check_age_availability()
+        
+        # Get basic stats if AGE is available
+        stats = {}
+        if age_available:
+            graph_exists = await kg_manager.ensure_graph_exists()
+            if graph_exists:
+                # Get node and relationship counts
+                node_count = await kg_manager.execute_cypher("MATCH (n) RETURN count(n) as count")
+                rel_count = await kg_manager.execute_cypher("MATCH ()-[r]->() RETURN count(r) as count")
+                
+                stats = {
+                    "total_nodes": node_count[0]["count"] if node_count else 0,
+                    "total_relationships": rel_count[0]["count"] if rel_count else 0
+                }
+        
+        return json.dumps({
+            "success": True,
+            "age_available": age_available,
+            "graph_accessible": age_available,
+            "statistics": stats,
+            "recommendations": [
+                "Install Apache AGE extension" if not age_available else "Knowledge graph is ready",
+                "Run 'build_knowledge_graph' to populate from crawled data" if stats.get("total_nodes", 0) == 0 else "Graph contains data"
+            ]
+        }, indent=2)
+        
+    except Exception as e:
+        return json.dumps({
+            "success": False,
+            "error": str(e),
+            "recommendations": [
+                "Check PostgreSQL connection",
+                "Verify Apache AGE installation",
+                "Check database permissions"
+            ]
+        }, indent=2)
+
+
+@mcp.tool()
+async def explore_entity_neighborhood(ctx: Context, entity_name: str, depth: int = 2, limit: int = 20) -> str:
+    """
+    Explore the neighborhood around an entity up to a specified depth.
+    
+    This tool provides a comprehensive view of an entity's connections,
+    including direct relationships and extended network effects.
+    
+    Args:
+        entity_name: Name of the entity to explore
+        depth: How many hops to explore (1-3 recommended)
+        limit: Maximum number of entities to return per level
+        
+    Returns:
+        JSON with neighborhood structure and relationship details
+    """
+    try:
+        kg_manager = KnowledgeGraphManager()
+        
+        if not await kg_manager.check_age_availability():
+            return json.dumps({
+                "success": False,
+                "error": "Apache AGE not available"
+            }, indent=2)
+        
+        # Get neighborhood at different depths
+        neighborhood = {}
+        
+        for d in range(1, depth + 1):
+            cypher_query = f"""
+            MATCH path = (start {{name: '{entity_name}'}}-[*{d}]-(neighbor)
+            WHERE neighbor <> start
+            WITH neighbor, path, length(path) as path_length
+            RETURN DISTINCT 
+                neighbor.name as name,
+                labels(neighbor)[0] as type,
+                neighbor.properties as properties,
+                path_length
+            ORDER BY path_length, name
+            LIMIT {limit}
+            """
+            
+            results = await kg_manager.execute_cypher(cypher_query)
+            neighborhood[f"depth_{d}"] = results
+        
+        # Get direct relationships for context
+        direct_rels = await kg_manager.execute_cypher(f"""
+            MATCH (start {{name: '{entity_name}'}})-[r]-(neighbor)
+            RETURN 
+                type(r) as relationship_type,
+                neighbor.name as neighbor_name,
+                labels(neighbor)[0] as neighbor_type,
+                r.properties as relationship_properties
+            LIMIT {limit}
+        """)
+        
+        return json.dumps({
+            "success": True,
+            "entity": entity_name,
+            "neighborhood": neighborhood,
+            "direct_relationships": direct_rels,
+            "metadata": {
+                "max_depth": depth,
+                "limit_per_level": limit
+            }
+        }, indent=2)
+        
+    except Exception as e:
+        return json.dumps({
+            "success": False,
+            "entity": entity_name,
+            "error": str(e)
+        }, indent=2)

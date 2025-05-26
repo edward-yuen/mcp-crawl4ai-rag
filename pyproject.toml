@@ -9,5 +9,12 @@ dependencies = [
     "mcp==1.7.1",
     "asyncpg==0.30.0",
     "openai==1.71.0",
-    "dotenv==0.9.9"
+    "python-dotenv==1.0.0"
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+markers = [
+    "asyncio: marks tests as requiring asyncio",
+    "integration: marks tests as integration tests"
 ]

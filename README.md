@@ -36,21 +36,68 @@ The Crawl4AI RAG MCP server is just the beginning. Here's where we're headed:
 - **Content Chunking**: Intelligently splits content by headers and size for better processing
 - **Vector Search**: Performs RAG over crawled content, optionally filtering by data source for precision
 - **Source Retrieval**: Retrieve sources available for filtering to guide the RAG process
+- **LightRAG Integration**: Query existing LightRAG schema data alongside crawled content
+- **Multi-Schema Search**: Search across both crawl and lightrag schemas with unified results
+
+## LightRAG Schema Integration
+
+This MCP server can query data from both the `crawl` schema (where web-crawled data is stored) and the existing `lightrag` schema in your PostgreSQL database. This allows you to:
+
+### Document Search
+- Access pre-existing RAG data from other applications
+- Combine web-crawled content with existing knowledge bases
+- Search across multiple data sources simultaneously
+
+The integration automatically detects common LightRAG table structures:
+- `lightrag.documents` table with `content`, `metadata`, and `embedding` columns
+- `lightrag.embeddings` table with `text`, `metadata`, and `embedding` columns
+
+### Knowledge Graph (Apache AGE)
+- Query the LightRAG knowledge graph using Cypher queries
+- Explore entities and their relationships
+- Find paths between entities
+- Search entities by semantic similarity
+- Analyze community structures
+- Get comprehensive graph statistics
+
+The knowledge graph integration requires Apache AGE extension and supports:
+- Entity nodes (Person, Organization, Concept, etc.)
+- Relationship edges (WORKS_AT, KNOWS, RELATED_TO, etc.)
+- Community hierarchies
+- Entity and relationship embeddings for semantic search
+
+See `example_lightrag_schema.sql` for document schema and `lightrag_knowledge_graph_schema.sql` for knowledge graph schema structures.
 
 ## Tools
 
-The server provides four essential web crawling and search tools:
+The server provides fourteen comprehensive web crawling, search, and knowledge graph tools:
 
+### Crawl Schema Tools
 1. **`crawl_single_page`**: Quickly crawl a single web page and store its content in the vector database
 2. **`smart_crawl_url`**: Intelligently crawl a full website based on the type of URL provided (sitemap, llms-full.txt, or a regular webpage that needs to be crawled recursively)
 3. **`get_available_sources`**: Get a list of all available sources (domains) in the database
 4. **`perform_rag_query`**: Search for relevant content using semantic search with optional source filtering
+
+### LightRAG Document Search Tools
+5. **`query_lightrag_schema`**: Query documents from the existing LightRAG schema with optional collection filtering
+6. **`get_lightrag_info`**: Get information about the LightRAG schema structure and available collections
+7. **`multi_schema_search`**: Search across both crawl and lightrag schemas simultaneously with optional result combining
+
+### LightRAG Knowledge Graph Tools (using Apache AGE)
+8. **`query_graph`**: Execute Cypher queries directly on the knowledge graph
+9. **`get_graph_entities`**: Retrieve entities from the knowledge graph with optional type filtering
+10. **`get_entity_graph`**: Get the relationship graph for a specific entity up to a specified depth
+11. **`search_graph_entities`**: Search for entities using semantic similarity on their embeddings
+12. **`find_entity_path`**: Find paths between two entities in the knowledge graph
+13. **`get_graph_communities`**: Retrieve community structures identified by LightRAG
+14. **`get_graph_stats`**: Get statistics about the knowledge graph structure
 
 ## Prerequisites
 
 - [Docker/Docker Desktop](https://www.docker.com/products/docker-desktop/) if running the MCP server as a container (recommended)
 - [Python 3.12+](https://www.python.org/downloads/) if running the MCP server directly through uv
 - [PostgreSQL](https://www.postgresql.org/) with [pgvector](https://github.com/pgvector/pgvector) extension (database for RAG)
+- [Apache AGE](https://age.apache.org/) extension (optional, for LightRAG knowledge graph functionality)
 - [OpenAI API key](https://platform.openai.com/api-keys) (for generating embeddings)
 
 ## Installation
@@ -241,3 +288,53 @@ This implementation provides a foundation for building more complex MCP servers 
 2. Create your own lifespan function to add your own dependencies
 3. Modify the `utils.py` file for any helper functions you need
 4. Extend the crawling capabilities by adding more specialized crawlers
+
+# Example usage documentation for these new tools:
+"""
+## Usage Examples for Enhanced Knowledge Graph Tools
+
+### 1. Build Knowledge Graph from Crawled Data
+```python
+# Process the last 50 crawled documents and extract entities/relationships
+await build_knowledge_graph(ctx, limit=50)
+```
+
+### 2. Analyze Graph Structure
+```python
+# Get insights about graph patterns and structure
+await analyze_graph_patterns(ctx)
+```
+
+### 3. Find Relationship Suggestions
+```python
+# Get suggestions for new relationships for "John Doe"
+await suggest_entity_relationships(ctx, entity_name="John Doe")
+```
+
+### 4. Enhanced Graph Querying
+```python
+# Query with parameters
+await enhanced_graph_query(ctx, 
+    cypher_query="MATCH (p:Person {name: $name})-[r]->(o) RETURN p, r, o",
+    parameters='{"name": "John Doe"}'
+)
+```
+
+### 5. Check Graph Health
+```python
+# Verify AGE installation and graph status
+await check_graph_health(ctx)
+```
+
+### 6. Explore Entity Networks
+```python
+# Explore 2-hop neighborhood around an entity
+await explore_entity_neighborhood(ctx, 
+    entity_name="OpenAI", 
+    depth=2, 
+    limit=15
+)
+```
+
+These tools provide a complete knowledge graph experience combining traditional
+RAG document search with graph-based entity and relationship exploration.
