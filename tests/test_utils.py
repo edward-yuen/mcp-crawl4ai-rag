@@ -216,36 +216,36 @@ class TestIntegration:
     
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_full_workflow(self):
+    async def test_full_workflow(self, db_integration_setup, mock_openai_for_integration):
         """Test complete workflow: add documents and search them."""
-        # Skip if no database connection
-        if not all([os.getenv("POSTGRES_HOST"), os.getenv("POSTGRES_DB")]):
-            pytest.skip("Database environment variables not set")
+        # db_integration_setup automatically handles database setup and cleanup
+        db_conn = db_integration_setup
         
-        # Initialize real database connection
-        await initialize_db_connection()
+        # Add test documents
+        urls = ["http://test.com/1", "http://test.com/2"]
+        chunk_numbers = [0, 0]
+        contents = ["Python is a programming language", "JavaScript is also a programming language"]
+        metadatas = [{"lang": "python"}, {"lang": "javascript"}]
+        url_to_full_document = {
+            "http://test.com/1": "Full Python document",
+            "http://test.com/2": "Full JavaScript document"
+        }
         
-        try:
-            # Add test documents
-            urls = ["http://test.com/1", "http://test.com/2"]
-            chunk_numbers = [0, 0]
-            contents = ["Python is a programming language", "JavaScript is also a programming language"]
-            metadatas = [{"lang": "python"}, {"lang": "javascript"}]
-            url_to_full_document = {
-                "http://test.com/1": "Full Python document",
-                "http://test.com/2": "Full JavaScript document"
-            }
-            
-            await add_documents_to_postgres(
-                urls, chunk_numbers, contents, metadatas, url_to_full_document
-            )
-            
-            # Search for documents
-            results = await search_documents("programming language", match_count=2)
-            
-            assert len(results) > 0
-            assert all('programming language' in r['content'] for r in results)
-            
-        finally:
-            # Clean up
-            await close_db_connection()
+        await add_documents_to_postgres(
+            urls, chunk_numbers, contents, metadatas, url_to_full_document
+        )
+        
+        # Search for documents
+        results = await search_documents("programming language", match_count=2)
+        
+        assert len(results) > 0
+        assert all('programming language' in r['content'] for r in results)
+        
+        # Test filtering
+        python_results = await search_documents(
+            "programming language", 
+            filter_metadata={"lang": "python"},
+            match_count=1
+        )
+        assert len(python_results) > 0
+        assert python_results[0]['metadata']['lang'] == 'python'

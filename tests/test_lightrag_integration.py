@@ -9,7 +9,7 @@ from unittest.mock import Mock, AsyncMock, patch
 from typing import List, Dict, Any
 import json
 
-from lightrag_integration import (
+from src.lightrag_integration import (
     search_lightrag_documents,
     get_lightrag_collections,
     get_lightrag_schema_info,
@@ -26,8 +26,8 @@ class TestLightRAGIntegration:
     """Test the LightRAG schema integration functionality."""
     
     @pytest.mark.asyncio
-    @patch('lightrag_integration.get_db_connection')
-    @patch('lightrag_integration.create_embedding')
+    @patch('src.lightrag_integration.get_db_connection')
+    @patch('src.lightrag_integration.create_embedding')
     async def test_search_lightrag_documents(self, mock_create_embedding, mock_get_db):
         """Test searching documents in lightrag schema."""
         # Setup mocks
@@ -65,7 +65,7 @@ class TestLightRAGIntegration:
         mock_db.fetch.assert_called_once()
     
     @pytest.mark.asyncio
-    @patch('lightrag_integration.get_db_connection')
+    @patch('src.lightrag_integration.get_db_connection')
     async def test_get_lightrag_collections(self, mock_get_db):
         """Test retrieving collections from lightrag schema."""
         # Setup mocks
@@ -90,7 +90,7 @@ class TestLightRAGIntegration:
         assert 'research' in collections
     
     @pytest.mark.asyncio
-    @patch('lightrag_integration.get_db_connection')
+    @patch('src.lightrag_integration.get_db_connection')
     async def test_get_lightrag_schema_info(self, mock_get_db):
         """Test retrieving schema information."""
         # Setup mocks
@@ -135,8 +135,8 @@ class TestLightRAGIntegration:
         assert 'table_details' in schema_info
     
     @pytest.mark.asyncio
-    @patch('lightrag_integration.get_db_connection')
-    @patch('lightrag_integration.create_embedding')
+    @patch('src.lightrag_integration.get_db_connection')
+    @patch('src.lightrag_integration.create_embedding')
     async def test_search_multi_schema(self, mock_create_embedding, mock_get_db):
         """Test searching across multiple schemas."""
         # Setup mocks
@@ -196,7 +196,7 @@ class TestLightRAGMCPTools:
     """Test the MCP tool functions for LightRAG integration."""
     
     @pytest.mark.asyncio
-    @patch('crawl4ai_mcp.search_lightrag_documents')
+    @patch('src.crawl4ai_mcp.search_lightrag_documents')
     async def test_query_lightrag_schema_tool(self, mock_search):
         """Test the query_lightrag_schema MCP tool."""
         # Setup mock
@@ -232,8 +232,8 @@ class TestLightRAGMCPTools:
         assert result_data['results'][0]['content'] == 'Test content'
     
     @pytest.mark.asyncio
-    @patch('crawl4ai_mcp.get_lightrag_schema_info')
-    @patch('crawl4ai_mcp.get_lightrag_collections')
+    @patch('src.crawl4ai_mcp.get_lightrag_schema_info')
+    @patch('src.crawl4ai_mcp.get_lightrag_collections')
     async def test_get_lightrag_info_tool(self, mock_get_collections, mock_get_schema):
         """Test the get_lightrag_info MCP tool."""
         # Setup mocks

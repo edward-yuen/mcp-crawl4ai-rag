@@ -235,6 +235,15 @@ async def add_documents_to_postgres(
         # Create embeddings for the entire batch at once
         batch_embeddings = create_embeddings_batch(contextual_contents)
         
+        # Safety check: ensure we have embeddings for all content
+        if len(batch_embeddings) != len(contextual_contents):
+            logger.warning(f"Expected {len(contextual_contents)} embeddings but got {len(batch_embeddings)}")
+            # Create individual embeddings as fallback
+            batch_embeddings = []
+            for content in contextual_contents:
+                embedding = create_embedding(content)
+                batch_embeddings.append(embedding)
+        
         # Prepare batch data for insertion
         batch_data = []
         for j in range(len(contextual_contents)):
@@ -247,13 +256,20 @@ async def add_documents_to_postgres(
                 **batch_metadatas[j]
             }
             
+            # Safety check for embedding availability
+            if j < len(batch_embeddings):
+                embedding_str = str(batch_embeddings[j])
+            else:
+                logger.error(f"No embedding available for item {j}, using default")
+                embedding_str = str([0.0] * 1536)  # Default empty embedding
+            
             # Prepare data tuple for insertion
             batch_data.append((
                 batch_urls[j],
                 batch_chunk_numbers[j],
                 contextual_contents[j],  # Store contextual content
                 json.dumps(metadata),    # Convert metadata to JSON string
-                batch_embeddings[j]      # Use embedding from contextual content
+                embedding_str            # Convert embedding list to string for PostgreSQL
             ))
         
         # Insert batch into PostgreSQL using execute_many
@@ -322,7 +338,7 @@ async def search_documents(
         filter_param = json.dumps(filter_metadata) if filter_metadata else '{}'
         
         # Execute the search function
-        # Reason: We need to pass the embedding as a list and convert to vector in SQL
+        # Reason: Convert embedding list to string format for PostgreSQL vector type
         results = await db.fetch(
             """
             SELECT * FROM crawl.match_crawled_pages(
@@ -331,7 +347,7 @@ async def search_documents(
                 $3::jsonb
             )
             """,
-            query_embedding,
+            str(query_embedding),  # Convert list to string
             match_count,
             filter_param
         )
@@ -339,12 +355,21 @@ async def search_documents(
         # Convert results to list of dictionaries
         documents = []
         for row in results:
+            # Parse metadata from JSON string if needed
+            metadata = row['metadata']
+            if isinstance(metadata, str):
+                try:
+                    metadata = json.loads(metadata)
+                except json.JSONDecodeError:
+                    logger.warning(f"Failed to parse metadata JSON: {metadata}")
+                    metadata = {}
+            
             doc = {
                 'id': row['id'],
                 'url': row['url'],
                 'chunk_number': row['chunk_number'],
                 'content': row['content'],
-                'metadata': row['metadata'],
+                'metadata': metadata,
                 'similarity': row['similarity']
             }
             documents.append(doc)

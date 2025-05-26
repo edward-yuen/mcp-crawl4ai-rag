@@ -295,19 +295,75 @@ class DatabaseConnection:
         """
         Create the crawl schema and required tables if they don't exist.
         
-        This method reads and executes the SQL from crawled_pages.sql.
+        This method reads and executes the SQL from setup_crawl_schema.sql.
         """
         sql_file_path = os.path.join(
             os.path.dirname(os.path.dirname(__file__)), 
-            "crawled_pages.sql"
+            "setup_crawl_schema.sql"
         )
         
         try:
             with open(sql_file_path, 'r') as f:
                 sql_script = f.read()
             
-            # Execute the entire SQL script
-            await self.execute(sql_script)
+            # Split SQL script handling dollar-quoted functions properly
+            statements = []
+            current_statement = ""
+            in_dollar_quotes = False
+            dollar_tag = ""
+            
+            lines = sql_script.split('\n')
+            for line in lines:
+                # Skip empty lines and comments at the start of lines
+                if not line.strip() or line.strip().startswith('--'):
+                    continue
+                
+                current_statement += line + '\n'
+                
+                # Check for dollar quoting
+                if not in_dollar_quotes:
+                    # Look for start of dollar quoting
+                    if '$$' in line:
+                        dollar_pos = line.find('$$')
+                        if dollar_pos >= 0:
+                            # Find the tag (if any) before $$
+                            before_dollar = line[:dollar_pos].strip()
+                            if before_dollar and not before_dollar.endswith('$'):
+                                dollar_tag = before_dollar.split()[-1] if before_dollar.split() else ""
+                            else:
+                                dollar_tag = ""
+                            in_dollar_quotes = True
+                else:
+                    # Look for end of dollar quoting
+                    end_pattern = f'$${dollar_tag}' if dollar_tag else '$$'
+                    if end_pattern in line:
+                        in_dollar_quotes = False
+                        dollar_tag = ""
+                
+                # If not in dollar quotes and line ends with semicolon, it's end of statement
+                if not in_dollar_quotes and line.strip().endswith(';'):
+                    statements.append(current_statement.strip())
+                    current_statement = ""
+            
+            # Add any remaining statement
+            if current_statement.strip():
+                statements.append(current_statement.strip())
+            
+            # Execute each statement
+            for i, statement in enumerate(statements):
+                if statement:
+                    try:
+                        await self.execute(statement)
+                        logger.debug(f"Executed statement {i+1}/{len(statements)}")
+                    except Exception as e:
+                        # Log warnings for non-critical errors (like extension already exists)
+                        error_msg = str(e).lower()
+                        if any(phrase in error_msg for phrase in ["already exists", "does not exist"]):
+                            logger.debug(f"Skipping statement (already exists): {e}")
+                        else:
+                            logger.warning(f"Error executing statement {i+1}: {e}")
+                            logger.debug(f"Statement was: {statement[:200]}...")
+            
             logger.info("Database schema created/verified successfully")
             
         except FileNotFoundError:
