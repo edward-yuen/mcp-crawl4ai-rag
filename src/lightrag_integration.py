@@ -7,8 +7,8 @@ in addition to the crawl schema.
 import json
 import logging
 from typing import List, Dict, Any, Optional
-from .database import get_db_connection
-from .utils import create_embedding
+from src.database import get_db_connection
+from src.utils import create_embedding
 
 # Set up logging
 logger = logging.getLogger(__name__)

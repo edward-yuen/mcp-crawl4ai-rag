@@ -9,12 +9,7 @@ from unittest.mock import Mock, AsyncMock, patch
 from typing import List, Dict, Any
 import json
 
-# Add the src directory to the Python path
-import sys
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
-from src.lightrag_integration import (
+from lightrag_integration import (
     search_lightrag_documents,
     get_lightrag_collections,
     get_lightrag_schema_info,

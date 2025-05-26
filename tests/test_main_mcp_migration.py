@@ -13,9 +13,9 @@ os.environ["PORT"] = "8051"
 os.environ["HOST"] = "0.0.0.0"
 os.environ["POSTGRES_HOST"] = "localhost"
 os.environ["POSTGRES_PORT"] = "5432"
-os.environ["POSTGRES_DB"] = "test_db"
-os.environ["POSTGRES_USER"] = "test_user"
-os.environ["POSTGRES_PASSWORD"] = "test_password"
+os.environ["POSTGRES_DB"] = "postgres"
+os.environ["POSTGRES_USER"] = "postgres"
+os.environ["POSTGRES_PASSWORD"] = "postgres"
 os.environ["OPENAI_API_KEY"] = "test_api_key"
 
 import pytest

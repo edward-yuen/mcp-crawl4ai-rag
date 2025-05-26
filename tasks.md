@@ -53,6 +53,7 @@
 - [ ] Test vector similarity search performance
 - [ ] Create any additional helper functions needed
 - [ ] Add proper indexing for performance
+- [ ] Test knowledge graph search performance
 
 ### Task 4.2: Data Migration (if needed)
 - [ ] Create script to export data from existing Supabase (if applicable)

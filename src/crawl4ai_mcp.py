@@ -20,15 +20,15 @@ import os
 import re
 
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode, MemoryAdaptiveDispatcher
-from .database import DatabaseConnection, initialize_db_connection, close_db_connection
-from .utils import add_documents_to_postgres, search_documents
-from .lightrag_integration import (
+from src.database import DatabaseConnection, initialize_db_connection, close_db_connection
+from src.utils import add_documents_to_postgres, search_documents
+from src.lightrag_integration import (
     search_lightrag_documents, 
     get_lightrag_collections,
     get_lightrag_schema_info,
     search_multi_schema
 )
-from .lightrag_knowledge_graph import (
+from src.lightrag_knowledge_graph import (
     query_knowledge_graph,
     get_entities_by_type,
     get_entity_relationships,
@@ -38,7 +38,7 @@ from .lightrag_knowledge_graph import (
     get_graph_statistics
 )
 
-from .enhanced_kg_integration import (
+from src.enhanced_kg_integration import (
     enhanced_query_graph,
     build_knowledge_graph_from_crawled_data,
     analyze_knowledge_graph,

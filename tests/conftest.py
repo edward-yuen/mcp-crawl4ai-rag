@@ -21,9 +21,9 @@ test_env = {
     "HOST": "0.0.0.0",
     "POSTGRES_HOST": "localhost",
     "POSTGRES_PORT": "5432",
-    "POSTGRES_DB": "test_db",
-    "POSTGRES_USER": "test_user",
-    "POSTGRES_PASSWORD": "test_password",
+    "POSTGRES_DB": "postgres",
+    "POSTGRES_USER": "postgres",
+    "POSTGRES_PASSWORD": "postgres",
     "OPENAI_API_KEY": "test_api_key",
     "TRANSPORT": "sse"
 }
