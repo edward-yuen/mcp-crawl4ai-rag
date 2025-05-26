@@ -55,10 +55,6 @@
 - [ ] Add proper indexing for performance
 - [ ] Test knowledge graph search performance
 
-### Task 4.2: Data Migration (if needed)
-- [ ] Create script to export data from existing Supabase (if applicable)
-- [ ] Create script to import data into PostgreSQL
-- [ ] Verify data integrity after migration
 
 ## Phase 5: Configuration and Documentation
 
@@ -227,3 +223,11 @@
 - [x] Created test_setup_verification.py to verify test environment
 - [x] Updated pytest.ini with proper configuration
 - [ ] Consider refactoring crawl4ai_mcp.py to use lazy initialization (long-term fix)
+
+
+### Task: Fix pytest warnings (2025-05-26)
+- [x] Fixed pytest return warning in test_path_fix.py (replaced return True/False with proper assertions)
+- [x] Added warning filters to pytest.ini to suppress external library deprecation warnings (pydantic, fake_http_header, importlib)
+- [x] Added asyncio_default_fixture_loop_scope configuration to pytest.ini
+- [x] Verified all 24 tests pass with 0 warnings
+- [x] Created pytest_warnings_fix_summary.md documenting all fixes

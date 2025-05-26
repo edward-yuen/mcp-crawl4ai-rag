@@ -9,23 +9,19 @@ sys.path.insert(0, str(project_root))
 
 def test_basic_path_fix():
     """Test that we can import src modules without external dependencies."""
-    try:
-        import src
-        print("PASS: Can import src module")
-        
-        from src import database
-        print("PASS: Can import src.database module")
-        
-        from src.database import DatabaseConnection, initialize_db_connection
-        assert callable(DatabaseConnection)
-        assert callable(initialize_db_connection)
-        print("PASS: Can import database functions")
-        
-        return True
-        
-    except ImportError as e:
-        print(f"FAIL: Import error - {e}")
-        return False
+    # Test basic src module import
+    import src
+    print("PASS: Can import src module")
+    
+    # Test database module import
+    from src import database
+    print("PASS: Can import src.database module")
+    
+    # Test specific function imports
+    from src.database import DatabaseConnection, initialize_db_connection
+    assert callable(DatabaseConnection)
+    assert callable(initialize_db_connection)
+    print("PASS: Can import database functions")
 
 
 def test_file_structure():
@@ -44,10 +40,10 @@ def test_file_structure():
 if __name__ == "__main__":
     print("Testing src module path fix...")
     
-    test_file_structure()
-    
-    if test_basic_path_fix():
+    try:
+        test_file_structure()
+        test_basic_path_fix()
         print("\nSUCCESS: Path fix works!")
         print("The 'ModuleNotFoundError: No module named src' is RESOLVED")
-    else:
-        print("\nFAILED: Path fix did not work.")
+    except (ImportError, AssertionError) as e:
+        print(f"\nFAILED: Path fix did not work - {e}")
