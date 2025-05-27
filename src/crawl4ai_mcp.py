@@ -965,7 +965,7 @@ async def get_graph_stats(ctx: Context) -> str:
         }, indent=2)
 
 async def main():
-    transport = os.getenv("TRANSPORT", "sse")
+    transport = os.getenv("TRANSPORT", "stdio")  # Default to stdio for MCP clients
     if transport == 'sse':
         # Run the MCP server with sse transport
         await mcp.run_sse_async()

@@ -1,0 +1,73 @@
+services:
+  # PostgreSQL database with pgvector extension
+  # postgres:
+  #   image: pgvector/pgvector:pg16
+  #   container_name: postgres-crawl4ai
+  #   environment:
+  #     POSTGRES_DB: lightrag
+  #     POSTGRES_USER: postgres
+  #     POSTGRES_PASSWORD: postgres
+  #     POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=C --lc-ctype=C"
+  #   ports:
+  #     - "5432:5432"
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
+  #     - ./crawled_pages.sql:/docker-entrypoint-initdb.d/01-crawled_pages.sql
+  #     - ./setup_crawl_schema.sql:/docker-entrypoint-initdb.d/02-setup_crawl_schema.sql
+  #   networks:
+  #     - lightrag-network
+  #   restart: unless-stopped
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U postgres -d lightrag"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+
+  # MCP server for stdio transport (MCP clients like Claude)
+  mcp-crawl4ai-rag:
+    build: .
+    container_name: mcp-crawl4ai-rag
+    env_file:
+      - .env
+    networks:
+      - lightrag-network
+    restart: unless-stopped
+    environment:
+      - PYTHONPATH=/app
+      - POSTGRES_HOST=postgres  # Use container name for internal networking
+    # depends_on:
+    #   postgres:
+    #     condition: service_healthy
+    # For stdio transport, we use stdin/stdout, no port exposure needed
+    stdin_open: true
+    tty: true
+
+  # Alternative service for SSE transport (web clients) - uncomment if needed
+  # mcp-crawl4ai-rag-web:
+  #   build: .
+  #   container_name: mcp-crawl4ai-rag-web
+  #   ports:
+  #     - "8051:8051"
+  #   env_file:
+  #     - .env
+  #   networks:
+  #     - lightrag-network
+  #   restart: unless-stopped
+  #   environment:
+  #     - PYTHONPATH=/app
+  #     - TRANSPORT=sse
+  #     - HOST=0.0.0.0
+  #     - PORT=8051
+  #     - POSTGRES_HOST=postgres  # Use container name for internal networking
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+
+networks:
+  lightrag-network:
+    driver: bridge
+    name: ai-lightrag_lightrag-network
+    external: true
+
+# volumes:
+#   postgres_data:

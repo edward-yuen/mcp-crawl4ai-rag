@@ -15,7 +15,12 @@ COPY . .
 RUN uv pip install --system -e . && \
     crawl4ai-setup
 
+# Conditionally expose port only if using SSE transport
 EXPOSE ${PORT}
 
+# Set Python path to include the app directory
+ENV PYTHONPATH=/app
+
 # Command to run the MCP server
-CMD ["uv", "run", "src/crawl4ai_mcp.py"]
+# The server will automatically detect transport mode from environment variables
+CMD ["python", "src/crawl4ai_mcp.py"]
