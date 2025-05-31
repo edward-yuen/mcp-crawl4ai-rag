@@ -1,5 +1,20 @@
 # Migration Tasks: Supabase to PostgreSQL Docker
 
+## Completed Tasks
+
+### 2025-05-31: Fixed LightRAG Search Issues
+- [x] Diagnosed issue with LightRAG schema queries not working properly
+- [x] Fixed POSTGRES_HOST in .env (changed from "postgres" to "localhost")
+- [x] Created improved search function that uses PostgreSQL JSON operators
+- [x] Added fallback search when AGE functions fail
+- [x] Created diagnostic tools:
+  - `diagnose_kg_content.py` - Analyzes knowledge graph content
+  - `test_improved_search.py` - Tests improved search
+  - `test_options_search.py` - Searches for options strategies
+- [x] Created `lightrag_search_improved.py` with robust search implementation
+- [x] Updated `lightrag_integration.py` to use improved search as primary method
+- [x] Documented findings in `LIGHTRAG_OPTIONS_DIAGNOSIS.md`
+
 ## Phase 1: Environment and Dependencies
 
 ### Task 1.1: Update Dependencies
@@ -237,6 +252,17 @@
 - [x] Added asyncio_default_fixture_loop_scope configuration to pytest.ini
 - [x] Verified all 24 tests pass with 0 warnings
 - [x] Created pytest_warnings_fix_summary.md documenting all fixes
+
+### Task: Implement Unified Enhanced Search Tool ✅ [Completed: 2025-05-31]
+- [x] Create enhanced_search_tools.py with unified search functionality
+- [x] Create search_helpers.py with implementation details for different search backends
+- [x] Consolidate redundant search tools (perform_rag_query, multi_schema_search deprecated)
+- [x] Implement QueryAnalyzer for intelligent query routing based on query type
+- [x] Support document search, entity search, graph queries, and natural language queries
+- [x] Update registry.py to include new tools and deprecate redundant ones
+- [x] Create comprehensive tests for the enhanced search functionality
+- [x] Create integration test script to verify functionality
+- [x] Add smart_search as simplified interface to enhanced_search
 
 ### MCP Server Refactoring Tasks (2025-05-30) ✅ [Completed: 2025-05-31]
 - [x] Create `src/tools/knowledge_graph_tools.py` - Extract all KG tools from main file (completed)

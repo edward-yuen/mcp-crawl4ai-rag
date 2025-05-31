@@ -7,10 +7,14 @@ from mcp.server.fastmcp import FastMCP
 from src.tools.crawling_tools import crawl_single_page, smart_crawl_url
 from src.tools.rag_tools import (
     get_available_sources,
-    perform_rag_query,
+    perform_rag_query,  # DEPRECATED: Use enhanced_search instead
     query_lightrag_schema,
     get_lightrag_info,
-    multi_schema_search
+    multi_schema_search  # DEPRECATED: Use enhanced_search instead
+)
+from src.tools.enhanced_search_tools import (
+    enhanced_search,
+    smart_search
 )
 from src.tools.knowledge_graph_tools import (
     query_graph,
@@ -42,10 +46,14 @@ def register_all_tools(mcp: FastMCP) -> None:
     
     # Register RAG tools
     mcp.tool()(get_available_sources)
-    mcp.tool()(perform_rag_query)
+    # mcp.tool()(perform_rag_query)  # DEPRECATED: Use enhanced_search instead
     mcp.tool()(query_lightrag_schema)
     mcp.tool()(get_lightrag_info)
-    mcp.tool()(multi_schema_search)
+    # mcp.tool()(multi_schema_search)  # DEPRECATED: Use enhanced_search instead
+    
+    # Register enhanced search tools
+    mcp.tool()(enhanced_search)
+    mcp.tool()(smart_search)
     
     # Register knowledge graph tools
     mcp.tool()(query_graph)

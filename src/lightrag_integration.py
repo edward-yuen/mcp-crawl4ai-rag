@@ -32,6 +32,17 @@ async def search_lightrag_documents(
     try:
         db = await get_db_connection()
         
+        # Try improved search method first
+        from src.lightrag_search_improved import search_lightrag_documents_improved
+        results = await search_lightrag_documents_improved(query, match_count, collection_name)
+        
+        if results:
+            logger.info(f"LightRAG improved search returned {len(results)} results")
+            return results
+        
+        # Fallback to original AGE-based search if improved search returns no results
+        logger.info("Trying AGE-based search as fallback...")
+        
         # Load AGE extension and set search path
         await db.execute("LOAD 'age'")
         await db.execute("SET search_path = ag_catalog, '$user', public")
