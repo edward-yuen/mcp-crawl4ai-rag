@@ -238,6 +238,18 @@
 - [x] Verified all 24 tests pass with 0 warnings
 - [x] Created pytest_warnings_fix_summary.md documenting all fixes
 
+### MCP Server Refactoring Tasks (2025-05-30) ✅ [Completed: 2025-05-31]
+- [x] Create `src/tools/knowledge_graph_tools.py` - Extract all KG tools from main file (completed)
+- [x] Create `src/server/registry.py` - Tool registration system (completed)
+- [x] Create `src/crawling/strategies.py` - Move strategy-specific functions (completed)
+- [x] Refactor main `src/crawl4ai_mcp.py` from 1263 lines to 45 lines (completed)
+- [x] Update imports to use new modules (completed)
+- [x] Create `src/models/responses.py` - Response formatting utilities ✅ [Completed: 2025-05-31]
+- [x] Create `src/common/constants.py` - Constants and configuration ✅ [Completed: 2025-05-31]
+- [x] Create `src/common/exceptions.py` - Custom exceptions ✅ [Completed: 2025-05-31]
+- [x] Create `src/common/validators.py` - Input validation ✅ [Completed: 2025-05-31]
+- [ ] Test all functionality (remaining)
+
 
 
 ### Task 4.1: Vector Search Functions Completion (2025-05-26)
@@ -269,3 +281,25 @@
   - `debug_lightrag_connection.py` - Tests multiple host configurations and validates data
   - `fix_postgres_host.py` - Interactive script to update .env based on deployment type
   - `LIGHTRAG_TROUBLESHOOTING.md` - Comprehensive troubleshooting guide
+
+
+### FastMCP Run Method Fix (2025-05-31)
+- **Issue**: MCP server failing to start in Docker with "TypeError: FastMCP.run() got an unexpected keyword argument 'read_stream'"
+- **Root Cause**: FastMCP API changed - run() method no longer accepts read_stream/write_stream parameters
+- **Solution**: Updated `src/crawl4ai_mcp.py` to use simplified run() method that auto-detects transport mode from environment
+- **Changes Made**:
+  - Removed explicit stream parameters from mcp.run() call
+  - Removed unused sys import
+  - FastMCP now automatically handles stdio/sse transport based on environment
+
+
+### FastMCP Asyncio Event Loop Fix (2025-05-31) ✅ [Completed: 2025-05-31]
+- **Issue**: MCP server failing to start in Docker with "RuntimeError: Already running asyncio in this thread"
+- **Root Cause**: FastMCP's `run()` method internally uses `anyio.run()` which conflicts with `asyncio.run()`
+- **Solution**: Changed main entry point to call `mcp.run()` directly instead of wrapping in `asyncio.run()`
+- **Changes Made**:
+  - Removed `asyncio.run(main())` wrapper function
+  - Removed `async def main()` function
+  - Removed asyncio import
+  - Call `mcp.run()` directly from `if __name__ == "__main__":` block
+  - FastMCP internally handles event loop creation and transport detection

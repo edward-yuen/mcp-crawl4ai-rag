@@ -13,7 +13,7 @@ import asyncpg
 # Load environment variables
 env_path = Path(__file__).parent / '.env'
 load_dotenv(env_path, override=True)
-os.environ['POSTGRES_HOST'] = 'localhost'
+os.environ['POSTGRES_HOST'] = 'postgres'
 
 async def test_final_integration():
     """Final integration test to ensure everything works."""
